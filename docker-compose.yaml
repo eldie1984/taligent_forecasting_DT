@@ -1,0 +1,104 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: taligent_db
+      POSTGRES_USER: taligent_user
+      POSTGRES_PASSWORD: taligent_pass
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./data/iowa_liquor_sales_january_2012_current_1051_rows.csv:/data/iowa_liquor_sales.csv 
+      - ./data/annual_population_estimates_for_state_of_iowa_cities_and_counties_1101_rows.csv:/data/annual_population_estimates.csv 
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taligent_user -d taligent_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    command: postgres -c max_wal_size=16GB -c min_wal_size=4GB -c checkpoint_completion_target=0.9 -c checkpoint_timeout=15min
+    networks:
+      - taligent_network
+
+# ML Pipeline
+  ml_pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: taligent_ml_pipeline
+    restart: on-failure
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      # Database config
+      DB_HOST: postgres
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-taligent_db}
+      DB_USER: ${DB_USER:-taligent_user}
+      DB_PASSWORD: ${DB_PASSWORD:-taligent_pass}
+
+      # ML config
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HYPERPARAM_ITERATIONS: ${HYPERPARAM_ITERATIONS:-50}
+      CV_FOLDS: ${CV_FOLDS:-5}
+      SCORING_SAMPLE_SIZE: ${SCORING_SAMPLE_SIZE:-10}
+
+      # MLflow config
+      MLFLOW_TRACKING_URI: http://host.docker.internal:5000
+      MLFLOW_EXPERIMENT_NAME: ${MLFLOW_EXPERIMENT_NAME:-liquor_sales_prediction}
+      BEST_MODEL_METRIC: ${BEST_MODEL_METRIC:-validation_rmse}
+      BEST_MODEL_MODE: ${BEST_MODEL_MODE:-min}
+
+      # Production scoring config
+      USE_MLFLOW: ${USE_MLFLOW:-true}
+      PROD_DATA_DIR: ${PROD_DATA_DIR:-data/prod}
+      OUTPUT_DIR: ${OUTPUT_DIR:-results}
+      SAVE_TO_DB: ${SAVE_TO_DB:-false}
+
+    volumes:
+      # Persistir outputs
+      - ./models:/app/models
+      - ./results:/app/results
+      - ./logs:/app/logs
+
+    networks:
+      - taligent_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  ofelia:
+    image: mcuadros/ofelia:latest
+    depends_on:
+      - app
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./ofelia.ini:/etc/ofelia/config.ini:ro
+    command: ["daemon", "--config", "/etc/ofelia/config.ini"]
+    networks:
+      - taligent_network
+
+  # Your Main Application
+  app:
+    image: ubuntu:latest
+    volumes:
+      # Mount the script into the app container
+      - ./backup.sh:/usr/local/bin/backup.sh:ro
+#      - ./src/db_setup.py:/app/src/db_setup.py:ro
+    command: tail -f /dev/null # Keeps container alive
+    networks:
+      - taligent_network
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  taligent_network:
+    driver: bridge
