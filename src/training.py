@@ -116,7 +116,7 @@ def load_training_data_bq():
     return df
 
 
-def prepare_time_series_data(df):
+def prepare_time_series_data(df,horizon):
     """Preparar datos para forecasting de series temporales"""
 
     logger.info("Preparando datos para series temporales...")
@@ -135,7 +135,7 @@ def prepare_time_series_data(df):
 
     logger.info(f"Datos agregados por día: {df_daily.shape[0]} registros")
     logger.info(f"Rango de fechas: {df_daily['ds'].min()} a {df_daily['ds'].max()}")
-    logger.info(f"Counties únicos: {df_daily['county'].nunique()}")
+    logger.info(f"Countries únicos: {df_daily['county'].nunique()}")
 
     # Feature engineering para series temporales
     df_daily['year'] = df_daily['ds'].dt.year
@@ -165,7 +165,8 @@ def prepare_time_series_data(df):
 
     # Eliminar filas con NaN (por lag features)
     df_daily = df_daily.dropna()
-
+    df_daily['target_y'] = df_daily.groupby('county')['y'].shift(-horizon)
+    df_daily = df_daily[df_daily['target_y'].notna() & df_daily['y_lag_30'].notna()]
     logger.info(f"Datos después de feature engineering: {df_daily.shape[0]} registros")
 
     return df_daily
@@ -189,8 +190,8 @@ def split_time_series_data(df, test_size=0.2):
 
     # Stats del target
     logger.info("\nTarget (sales_dollars):")
-    logger.info(f"  Train - mean: ${train_df['y'].mean():,.2f}, std: ${train_df['y'].std():,.2f}")
-    logger.info(f"  Val   - mean: ${val_df['y'].mean():,.2f}, std: ${val_df['y'].std():,.2f}")
+    logger.info(f"  Train - mean: ${train_df['target_y'].mean():,.2f}, std: ${train_df['target_y'].std():,.2f}")
+    logger.info(f"  Val   - mean: ${val_df['target_y'].mean():,.2f}, std: ${val_df['target_y'].std():,.2f}")
 
     return train_df, val_df
 
@@ -272,9 +273,9 @@ def train_xgboost_forecaster(train_df, val_df):
 
     # Separar features y target
     X_train = train_df_encoded[feature_cols + [c for c in train_df_encoded.columns if c.startswith('county_')]]
-    y_train = train_df_encoded['y']
+    y_train = train_df_encoded['target_y']
     X_val = val_df_encoded[feature_cols + [c for c in val_df_encoded.columns if c.startswith('county_')]]
-    y_val = val_df_encoded['y']
+    y_val = val_df_encoded['target_y']
 
     # Entrenar modelo
     model = xgb.XGBRegressor(
@@ -315,12 +316,12 @@ def evaluate_forecast_model(val_df, forecasts, model_type="prophet"):
                 # Merge forecast with actuals
                 merged = pd.merge(
                     forecast[['ds', 'yhat']],
-                    county_val[['ds', 'y']],
+                    county_val[['ds', 'target_y']],
                     on='ds',
                     how='inner'
                 )
                 all_predictions.extend(merged['yhat'].values)
-                all_actuals.extend(merged['y'].values)
+                all_actuals.extend(merged['target_y'].values)
 
         y_true = np.array(all_actuals)
         y_pred = np.array(all_predictions)
@@ -715,12 +716,13 @@ def main():
 
         # Paso 3: Preparar datos para series temporales
         logger.info("Preparando datos para series temporales...")
-        df_ts = prepare_time_series_data(df)
+        df_ts = prepare_time_series_data(df,FORECAST_HORIZON)
 
         # Paso 4: Split train/validation basado en tiempo
         test_size = 0.2
         logger.info("Dividiendo datos en train y validation (time-based)...")
         train_df, val_df = split_time_series_data(df_ts, test_size=test_size)
+        val_df.to_csv("val_df.csv", index=False)
 
         # Seleccionar modelo de forecasting
         model_type = os.getenv("FORECAST_MODEL", "xgboost")  # 'prophet' or 'xgboost'
