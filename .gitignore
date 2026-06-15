@@ -9,8 +9,6 @@ __pycache__/
 *.csv
 *.json
 *.txt
-*.md
-*.pdf
 *.zip
 *.tar.gz
 *.rar
