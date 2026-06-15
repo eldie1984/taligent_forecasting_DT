@@ -49,7 +49,7 @@ echo -e "${BLUE}"
 cat << "EOF"
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║        Taligent price prediction - ML Pipeline               ║
+║        Taligent table generation - ML Pipeline               ║
 ║                     Version 1.0.0                            ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -104,7 +104,7 @@ run_python_script() {
 
 # ========== MAIN EXECUTION ==========
 
-log_info "Iniciando ML Pipeline"
+log_info "Iniciando ME Pipeline"
 log_info "Configuración:"
 log_info "  DB Host: $DB_HOST"
 log_info "  DB Name: $DB_NAME"
@@ -117,23 +117,12 @@ log_info "  Scoring Sample Size: ${SCORING_SAMPLE_SIZE:-10}"
 # 1. Wait for PostgreSQL
 wait_for_postgres
 
-# 2. Database Setup
-# if ! run_python_script "db_setup.py"; then
-#     log_error "Pipeline abortado: fallo en db_setup"
-#     exit 1
-# fi
-
-# 3. Training Pipeline
-if ! run_python_script "training.py"; then
-    log_error "Pipeline abortado: fallo en training"
+if ! run_python_script "db_setup.py"; then
+    log_error "Pipeline abortado: fallo en db_setup"
     exit 1
 fi
 
-# 4. Scoring Pipeline
-if ! run_python_script "scoring.py"; then
-    log_error "Pipeline abortado: fallo en scoring"
-    exit 1
-fi
+
 
 # ========== SUCCESS ==========
 

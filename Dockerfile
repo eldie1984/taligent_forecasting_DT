@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     libpq-dev \
+    entr \
     && rm -rf /var/lib/apt/lists/*
 
 # Configuración de Poetry para instalar en el Python global del sistema del Builder
@@ -27,8 +28,8 @@ RUN poetry install --no-root --no-interaction --no-ansi
 # Stage 2 - Runtime
 FROM python:3.12-slim
 
-LABEL maintainer="jm.aragonpaz@gmail.com" \
-      description="ML Engineering Challenge - MetLife" \
+LABEL maintainer="eldie1984@gmail.com" \
+      description="ML Engineering Challenge - Taligent" \
       version="1.0"
 
 ENV PYTHONUNBUFFERED=1 \
@@ -51,7 +52,7 @@ COPY src/ /app/src/
 COPY entrypoint.sh .
 
 # Crear directorios para outputs y asegurar permisos
-RUN mkdir -p models results logs
+RUN mkdir -p  logs
 
 # Crear usuario no-root (seguridad) y asignar permisos en un solo paso
 RUN groupadd -r appuser && \
